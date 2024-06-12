@@ -129,8 +129,10 @@ float3 WhittedApp::Trace( Ray& ray, int rayDepth )
 	{	
 		// calculate the specular reflection in the intersection point
 		Ray secondary;
-		secondary.D = ray.D - 2 * N * dot( N, ray.D );
-		secondary.O = I + secondary.D * 0.001f;
+		secondary.D4 = _mm_sub_ps(ray.D4, _mm_mul_ps(_mm_mul_ps(_mm_set_ps1(2), n4), _mm_dp_ps(n4, ray.D4, 0xFF)));
+		//secondary.D = ray.D - 2 * N * dot( N, ray.D );
+		secondary.O4 = _mm_add_ps(i4, _mm_mul_ps(secondary.D4, _mm_set_ps1(0.001f)));
+		//secondary.O = I + secondary.D * 0.001f;
 		secondary.hit.t = 1e30f;
 		if (rayDepth >= 10) return float3( 0 );
 		return Trace( secondary, rayDepth + 1 );
