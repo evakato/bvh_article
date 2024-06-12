@@ -1,4 +1,5 @@
 #include "precomp.h"
+#include "simdmath.h"
 #include "bvh.h"
 
 /*
@@ -17,19 +18,26 @@ void IntersectTri( Ray& ray, const Tri& tri, const uint instPrim )
 {
 	// Moeller-Trumbore ray/triangle intersection algorithm, see:
 	// en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
-	const float3 edge1 = tri.vertex1 - tri.vertex0;
-	const float3 edge2 = tri.vertex2 - tri.vertex0;
-	const float3 h = cross( ray.D, edge2 );
-	const float a = dot( edge1, h );
-	if (fabs( a ) < 0.00001f) return; // ray parallel to triangle
-	const float f = 1 / a;
-	const float3 s = ray.O - tri.vertex0;
-	const float u = f * dot( s, h );
+	__m128 edge1_4 = _mm_sub_ps(tri.v1, tri.v0);
+	__m128 edge2_4 = _mm_sub_ps(tri.v2, tri.v0);
+	__m128 h4 = crossSIMD(ray.D4, edge2_4);
+
+	__m128 a4 = _mm_dp_ps(edge1_4, h4, 0xFF);
+	if (fabs( a4.m128_f32[0]) < 0.00001f) return; // ray parallel to triangle
+
+	__m128 f4 = _mm_rcp_ps(a4);
+	__m128 s4 = _mm_sub_ps(ray.O4, tri.v0);
+	__m128 u4 = _mm_mul_ps(f4, _mm_dp_ps(s4, h4, 0xFF));
+	const float u = u4.m128_f32[0];
 	if (u < 0 || u > 1) return;
-	const float3 q = cross( s, edge1 );
-	const float v = f * dot( ray.D, q );
+
+	__m128 q4 = crossSIMD(s4, edge1_4);
+	__m128 v4 = _mm_mul_ps(f4, _mm_dp_ps(ray.D4, q4, 0xFF));
+	const float v = v4.m128_f32[0];
 	if (v < 0 || u + v > 1) return;
-	const float t = f * dot( edge2, q );
+
+	__m128 t4 = _mm_mul_ps(f4, _mm_dp_ps(edge2_4, q4, 0xFF));
+	const float t = t4.m128_f32[0];
 	if (t > 0.0001f && t < ray.hit.t)
 		ray.hit.t = t, ray.hit.u = u,
 		ray.hit.v = v, ray.hit.instPrim = instPrim;
