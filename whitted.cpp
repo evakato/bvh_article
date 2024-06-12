@@ -70,15 +70,23 @@ float3 WhittedApp::Trace( Ray& ray, int rayDepth )
 	// calculate texture uv based on barycentrics
 	uint triIdx = i.instPrim & 0xfffff;
 	uint instIdx = i.instPrim >> 20;
-	TriEx& tri = mesh->triEx[triIdx];
+
+	// read shading data
+	float2 texcoord0 = mesh->texcoord0[triIdx];
+	float2 texcoord1 = mesh->texcoord1[triIdx];
+	float2 texcoord2 = mesh->texcoord2[triIdx];
+	float3 normal0 = mesh->normal0[triIdx];
+	float3 normal1 = mesh->normal1[triIdx];
+	float3 normal2 = mesh->normal2[triIdx];
+
 	Surface* tex = mesh->texture;
-	float2 uv = i.u * tri.uv1 + i.v * tri.uv2 + (1 - (i.u + i.v)) * tri.uv0;
+	float2 uv = i.u * texcoord1 + i.v * texcoord2 + (1 - (i.u + i.v)) * texcoord0;
 	int iu = (int)(uv.x * tex->width) % tex->width;
 	int iv = (int)(uv.y * tex->height) % tex->height;
 	uint texel = tex->pixels[iu + iv * tex->width];
 	float3 albedo = RGB8toRGB32F( texel );
 	// calculate the normal for the intersection
-	float3 N = i.u * tri.N1 + i.v * tri.N2 + (1 - (i.u + i.v)) * tri.N0;
+	float3 N = i.u * normal1 + i.v * normal2 + (1 - (i.u + i.v)) * normal0;
 	N = normalize( TransformVector( N, bvhInstance[instIdx].GetTransform() ) );
 	float3 I = ray.O + i.t * ray.D;
 	// shading
@@ -119,6 +127,7 @@ void WhittedApp::Tick( float deltaTime )
 	p1 = TransformPosition( float3( aspectRatio, 1, 1.5f ), M2 );
 	p2 = TransformPosition( float3( -aspectRatio, -1, 1.5f ), M2 );
 	float3 camPos = TransformPosition( float3( 0, -2, -8.5f ), M1 );
+
 #pragma omp parallel for schedule(dynamic)
 	for (int tile = 0; tile < (SCRWIDTH * SCRHEIGHT / 64); tile++)
 	{

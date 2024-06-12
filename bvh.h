@@ -6,6 +6,8 @@
 // bin count for binned BVH building
 #define BINS 8
 
+#define OPTVEC_TEST
+
 namespace Tmpl8
 {
 
@@ -18,9 +20,6 @@ __declspec(align(64)) struct Tri
 	union { float3 vertex2; __m128 v2; };
 	union { float3 centroid; __m128 centroid4; }; // total size: 64 bytes
 };
-
-// additional triangle data, for texturing and shading
-struct TriEx { float2 uv0, uv1, uv2; float3 N0, N1, N2; };
 
 // minimalist AABB struct with grow functionality
 struct aabb
@@ -97,12 +96,21 @@ public:
 // minimalist mesh class
 class Mesh
 {
+
 public:
 	Mesh() = default;
 	Mesh( uint primCount );
 	Mesh( const char* objFile, const char* texFile );
 	Tri* tri = 0;			// triangle data for intersection
-	TriEx* triEx = 0;		// triangle data for shading
+
+	// triangle data for shading
+	union { float2* texcoord0; __m128* uv0; };
+	union { float2* texcoord1; __m128* uv1; };
+	union { float2* texcoord2; __m128* uv2; };
+	union { float3* normal0; __m128* N0; };
+	union { float3* normal1; __m128* N1; };
+	union { float3* normal2; __m128* N2; };
+
 	int triCount = 0;
 	BVH* bvh = 0;
 	Surface* texture = 0;
