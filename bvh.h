@@ -20,7 +20,14 @@ __declspec(align(64)) struct Tri
 };
 
 // additional triangle data, for texturing and shading
-struct TriEx { float2 uv0, uv1, uv2; float3 N0, N1, N2; };
+struct TriEx {
+	union { float2 texcoord0; __m128 uv0; };
+	union { float2 texcoord1; __m128 uv1; };
+	union { float2 texcoord2; __m128 uv2; };
+	union { float3 normal0; __m128 n0; };
+	union { float3 normal1; __m128 n1; };
+	union { float3 normal2; __m128 n2; };
+};
 
 // minimalist AABB struct with grow functionality
 struct aabb

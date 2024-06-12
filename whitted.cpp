@@ -13,6 +13,19 @@
 
 TheApp* CreateApp() { return new WhittedApp(); }
 
+/*
+static union { __m128 lightColor4; float3 lightColor; };
+lightColor = float3( 150, 150, 120 );
+union { __m128 ambient4; float3 ambient; };
+ambient = float3( 0.2f, 0.2f, 0.4f );
+union { __m128 lightPos4; float3 lightPos; };
+lightPos = float3( 3, 10, 2 );
+*/
+
+__m128 lightColor4 = _mm_set_ps(0.0f, 120.0f, 150.0f, 150.0f);
+__m128 ambient4 = _mm_set_ps(0.0f, 0.4f, 0.2f, 0.2f);
+__m128 lightPos4 = _mm_set_ps(0.0f, 2.0f, 10.0f, 3.0f);
+
 inline float3 RGB8toRGB32F( uint c )
 {
 	float s = 1 / 256.0f;
@@ -72,15 +85,44 @@ float3 WhittedApp::Trace( Ray& ray, int rayDepth )
 	uint instIdx = i.instPrim >> 20;
 	TriEx& tri = mesh->triEx[triIdx];
 	Surface* tex = mesh->texture;
-	float2 uv = i.u * tri.uv1 + i.v * tri.uv2 + (1 - (i.u + i.v)) * tri.uv0;
-	int iu = (int)(uv.x * tex->width) % tex->width;
-	int iv = (int)(uv.y * tex->height) % tex->height;
+	__m128 iu4 = _mm_set_ps1(i.u);
+	__m128 iv4 = _mm_set_ps1(i.v);
+	__m128 iw4 = _mm_sub_ps(_mm_set_ps1(1), _mm_add_ps(iu4, iv4));
+	__m128 bary1 = _mm_mul_ps(iu4, tri.uv1);
+	__m128 bary2 = _mm_mul_ps(iv4, tri.uv2);
+	__m128 bary0 = _mm_mul_ps(iw4, tri.uv0);
+	union { __m128 uv; float2 uvi; };
+	uv = _mm_add_ps(bary1, _mm_add_ps(bary2, bary0));
+#if 0
+	int iu = (int)(uvi.x * tex->width) % tex->width;
+	int iv = (int)(uvi.y * tex->height) % tex->height;
 	uint texel = tex->pixels[iu + iv * tex->width];
-	float3 albedo = RGB8toRGB32F( texel );
+#else 
+	__m128 texSize = _mm_set_ps(0.0f, 0.0f, (float)tex->height, (float)tex->width);
+	__m128 scaledUV = _mm_mul_ps(uv, texSize);
+	// Convert to integers
+	__m128i intUV = _mm_cvttps_epi32(scaledUV);
+	// Compute modulus using bitwise AND with (dimension - 1) for power of 2 texture sizes
+	__m128i texDimMask = _mm_set_epi32(0, 0, tex->height - 1, tex->width - 1);
+	intUV = _mm_and_si128(intUV, texDimMask);
+	// Extract the resulting integer coordinates
+	int iu = _mm_extract_epi32(intUV, 0);
+	int iv = _mm_extract_epi32(intUV, 1);
+	uint texel = tex->pixels[iu + iv * tex->width];
+#endif
+	union { __m128 albedo4; float3 albedo; };
+	albedo = RGB8toRGB32F( texel );
 	// calculate the normal for the intersection
-	float3 N = i.u * tri.N1 + i.v * tri.N2 + (1 - (i.u + i.v)) * tri.N0;
+	//float3 N = i.u * tri.normal1 + i.v * tri.normal2 + (1 - (i.u + i.v)) * tri.normal0;
+	bary1 = _mm_mul_ps(iu4, tri.n1);
+	bary2 = _mm_mul_ps(iv4, tri.n2);
+	bary0 = _mm_mul_ps(iw4, tri.n0);
+	union { __m128 n4; float3 N; };
+	n4 = _mm_add_ps(bary1, _mm_add_ps(bary2, bary0));
 	N = normalize( TransformVector( N, bvhInstance[instIdx].GetTransform() ) );
-	float3 I = ray.O + i.t * ray.D;
+	union { __m128 i4; float3 I; };
+	i4 = _mm_add_ps(ray.O4, _mm_mul_ps(_mm_set_ps1(i.t), ray.D4));
+	//float3 I = ray.O + i.t * ray.D;
 	// shading
 	bool mirror = (instIdx * 17) & 1;
 	if (mirror)
@@ -96,13 +138,17 @@ float3 WhittedApp::Trace( Ray& ray, int rayDepth )
 	else
 	{
 		// calculate the diffuse reflection in the intersection point
-		float3 lightPos( 3, 10, 2 );
-		float3 lightColor( 150, 150, 120 );
-		float3 ambient( 0.2f, 0.2f, 0.4f );
-		float3 L = lightPos - I;
-		float dist = length( L );
-		L *= 1.0f / dist;
-		return albedo * (ambient + max( 0.0f, dot( N, L ) ) * lightColor * (1.0f / (dist * dist)));
+		__m128 L4 = _mm_sub_ps(lightPos4, i4);
+		__m128 dist4 = _mm_sqrt_ps(_mm_dp_ps(L4, L4, 0xFF));
+		__m128 invdist4 = _mm_div_ps(_mm_set_ps1(1.0f), dist4);
+		L4 = _mm_mul_ps(L4, invdist4);
+		__m128 NdotL = _mm_max_ps(_mm_set_ps1(0.0f), _mm_dp_ps(n4, L4, 0xFF));
+		__m128 distatten = _mm_div_ps(_mm_set_ps1(1.0f), _mm_mul_ps(dist4, dist4));
+		__m128 shading = _mm_mul_ps(distatten, _mm_mul_ps(NdotL, lightColor4));
+		union { __m128 finalcol4; float3 finalcol; };
+		finalcol4 = _mm_mul_ps(albedo4, _mm_add_ps(ambient4, shading));
+		return finalcol;
+		//return albedo * (ambient + max( 0.0f, dot( N, L ) ) * lightColor * (1.0f / (dist * dist)));
 	}
 }
 
