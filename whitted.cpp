@@ -116,48 +116,26 @@ void WhittedApp::TraceAVX( RayAVX& ray, __m256* r, __m256* g, __m256* b, int ray
 	__m256 half = _mm256_set1_ps(0.3f);
 
 	// sample sky
-	__m256 skyWidth8 = _mm256_set1_ps(skyWidth);
-	//uint u = (uint)(skyWidth * atan2f( ray.D.z, ray.D.x ) * INV2PI - 0.5f);
-	__m256 sky_tan = _mm256_mul_ps(skyWidth8, atan2_avx(ray.Dz8, ray.Dx8));
-	__m256 sky_u8 = _mm256_fmsub_ps(sky_tan, _mm256_set1_ps(INV2PI), _mm256_set1_ps(0.5f));
-
-	__m256i int_vector = _mm256_cvtps_epu32(sky_u8);
-	unsigned int x[8];
-	_mm256_storeu_si256((__m256i*)x, int_vector);
-	printf("%d \n", x[0]);
-
-	//uint v = (uint)(skyHeight * acosf( ray.D.y ) * INVPI - 0.5f);
-	__m256 sky_cos = _mm256_mul_ps(_mm256_set1_ps(skyHeight), _mm256_acos_ps(ray.Dy8));
-	__m256 sky_v8 = _mm256_fmsub_ps(sky_cos, _mm256_set1_ps(INV2PI), _mm256_set1_ps(0.5f));
-
-	//uint skyIdx = (u + v * skyWidth) % skyFull;
-	__m256 skyIdx = modAVX(_mm256_fmadd_ps(sky_v8, skyWidth8, sky_u8), _mm256_set1_ps(skyFull));
-
-	//return 0.65f * float3( skyPixels[skyIdx * 3], skyPixels[skyIdx * 3 + 1], skyPixels[skyIdx * 3 + 2] );
-	__m256i intIndices = _mm256_cvttps_epi32(skyIdx);
-	int skyIdxI[8];
-	_mm256_storeu_si256((__m256i*)skyIdxI, intIndices);
-	int skyrI[8], skygI[8], skybI[8];
+	float Dx[8], Dy[8], Dz[8];
+	_mm256_storeu_ps(Dx, ray.Dx8);
+	_mm256_storeu_ps(Dy, ray.Dy8);
+	_mm256_storeu_ps(Dz, ray.Dz8);
+	float r_values[8], g_values[8], b_values[8];
 	for (int i = 0; i < 8; i++) {
-		int scaleI = skyIdxI[i] * 3;
-		skyrI[i] = skyPixels[scaleI];
-		skygI[i] = skyPixels[scaleI + 1];
-		skybI[i] = skyPixels[scaleI + 2];
+		uint u = (uint)(skyWidth * atan2f(Dz[i], Dx[i]) * INV2PI - 0.5f);
+		uint v = (uint)(skyHeight * acosf(Dy[i]) * INVPI - 0.5f);
+		uint skyIdx = (u + v * skyWidth) % (skyFull);
+		r_values[i] = skyPixels[skyIdx * 3];
+		g_values[i] = skyPixels[skyIdx * 3 + 1];
+		b_values[i] = skyPixels[skyIdx * 3 + 2];
 	}
-	__m256i skyrI8 = _mm256_loadu_si256((__m256i*)skyrI);
-	__m256 skyr = _mm256_cvtepi32_ps(skyrI8);
-	__m256i skygI8 = _mm256_loadu_si256((__m256i*)skygI);
-	__m256 skyg = _mm256_cvtepi32_ps(skygI8);
-	__m256i skybI8 = _mm256_loadu_si256((__m256i*)skybI);
-	__m256 skyb = _mm256_cvtepi32_ps(skybI8);
-
+	__m256 skyr = _mm256_loadu_ps(r_values);
+	__m256 skyg = _mm256_loadu_ps(g_values);
+	__m256 skyb = _mm256_loadu_ps(b_values);
 	__m256 scale = _mm256_set1_ps(0.65f);
-	//skyr = _mm256_mul_ps(skyr, scale);
-	//skyg = _mm256_mul_ps(skyg, scale);
-	//skyg = _mm256_mul_ps(skyb, scale);
-	skyr = _mm256_set1_ps(0.5f);
-	skyg = _mm256_set1_ps(0.5f);
-	skyb = _mm256_set1_ps(0.5f);
+	skyr = _mm256_mul_ps(scale, skyr);
+	skyg = _mm256_mul_ps(scale, skyg);
+	skyb = _mm256_mul_ps(scale, skyb);
 
 	*r = _mm256_blendv_ps(half, skyr, mask);
 	*g = _mm256_blendv_ps(half, skyg, mask);
