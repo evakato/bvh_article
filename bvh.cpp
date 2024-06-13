@@ -1,4 +1,5 @@
 #include "precomp.h"
+#include "simdmath.h"
 #include "bvh.h"
 
 /*
@@ -13,20 +14,86 @@ with kDtree:
 
 // functions
 
+void IntersectTriAVX(RayAVX& ray, const Tri& tri, const __m256 instIdx, const __m256 triIdx)
+{
+	const float3 edge1 = tri.vertex1 - tri.vertex0;
+	const float3 edge2 = tri.vertex2 - tri.vertex0;
+	__m256 edge1x = _mm256_set1_ps(edge1.x), edge1y = _mm256_set1_ps(edge1.y), edge1z = _mm256_set1_ps(edge1.z);
+	__m256 edge2x = _mm256_set1_ps(edge2.x), edge2y = _mm256_set1_ps(edge2.y), edge2z = _mm256_set1_ps(edge2.z);
+	//const float3 h = cross(ray.D, edge2);
+	__m256 hx, hy, hz;
+	crossAVX(ray.Dx8, ray.Dy8, ray.Dz8, edge2x, edge2y, edge2z, &hx, &hy, &hz);
+	//const float a = dot(edge1, h);
+	__m256 a = dotAVX(edge1x, edge1y, edge1z, hx, hy, hz);
+	//const float f = 1 / a;
+	__m256 f = _mm256_rcp_ps(a);
+	//const float3 s = ray.O - tri.vertex0;
+	__m256 sx = _mm256_sub_ps(ray.Ox8, _mm256_set1_ps(tri.vertex0.x));
+	__m256 sy = _mm256_sub_ps(ray.Oy8, _mm256_set1_ps(tri.vertex0.y));
+	__m256 sz = _mm256_sub_ps(ray.Oz8, _mm256_set1_ps(tri.vertex0.z));
+	//const float u = f * dot(s, h);
+	__m256 u = _mm256_mul_ps(f, dotAVX(sx, sy, sz, hx, hy, hz));
+	//const float3 q = cross(s, edge1);
+	__m256 qx, qy, qz;
+	crossAVX(sx, sy, sz, edge1x, edge1y, edge1z, &qx, &qy, &qz);
+	//const float v = f * dot(ray.D, q);
+	__m256 v = _mm256_mul_ps(f, dotAVX(ray.Dx8, ray.Dy8, ray.Dz8, qx, qy, qz));
+	//const float t = f * dot(edge2, q);
+	__m256 t = _mm256_mul_ps(f, dotAVX(edge2x, edge2y, edge2z, qx, qy, qz));
+
+	//if (fabs(a) < 0.00001f) return; // ray parallel to triangle
+	__m256 ray_notparallel = _mm256_cmp_ps(absAVX(a), _mm256_set1_ps(0.00001f), _CMP_GE_OS);
+	//if (u < 0 || u > 1) return;
+	__m256 u_ge_0 = _mm256_cmp_ps(u, _mm256_setzero_ps(), _CMP_GE_OS);
+	__m256 u_le_1 = _mm256_cmp_ps(u, _mm256_set1_ps(1.0f), _CMP_LE_OS);
+	__m256 u_01 = _mm256_and_ps(u_ge_0, u_le_1);
+	//if (v < 0 || u + v > 1) return;
+	__m256 v_ge_0 = _mm256_cmp_ps(v, _mm256_setzero_ps(), _CMP_GE_OS);
+	__m256 uv_le_1 = _mm256_cmp_ps(_mm256_add_ps(u, v), _mm256_set1_ps(1.0f), _CMP_LE_OS);
+	__m256 v_01 = _mm256_and_ps(v_ge_0, uv_le_1);
+	//if (t > 0.0001f && t < ray.hit.t)
+	__m256 t_notsmall = _mm256_cmp_ps(t, _mm256_set1_ps(0.00001f), _CMP_GT_OQ);
+	__m256 t_closer = _mm256_cmp_ps(t, ray.t8, _CMP_LT_OS);
+	__m256 t_validrange = _mm256_and_ps(t_notsmall, t_closer);
+	//print_m256(t_notsmall);
+	ray.t8 = _mm256_blendv_ps(ray.t8, t, t_notsmall);
+
+	/*
+	__m256 fullmask = _mm256_and_ps(_mm256_and_ps(_mm256_and_ps(ray_notparallel, u_01), v_01), t_validrange);
+	ray.t8 = _mm256_blendv_ps(ray.t8, t, fullmask);
+	ray.u = _mm256_blendv_ps(ray.u, u, fullmask);
+	ray.v = _mm256_blendv_ps(ray.v, v, fullmask);
+	ray.instIdx = _mm256_blendv_ps(ray.instIdx, instIdx, fullmask);
+	ray.triIdx = _mm256_blendv_ps(ray.triIdx, triIdx, fullmask);
+	*/
+	//ray.hit.t = t, ray.hit.u = u,
+	//ray.hit.v = v, ray.hit.instPrim = instPrim;
+}
+
 void IntersectTri( Ray& ray, const Tri& tri, const uint instPrim )
 {
 	// Moeller-Trumbore ray/triangle intersection algorithm, see:
 	// en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
-	const float3 edge1 = tri.vertex1 - tri.vertex0;
-	const float3 edge2 = tri.vertex2 - tri.vertex0;
-	const float3 h = cross( ray.D, edge2 );
+	union { const float3 edge1; __m128 edge1_4; };
+	union { const float3 edge2; __m128 edge2_4; };
+	union { const float3 h; __m128 h4; };
+	union { const float3 q; __m128 q4; };
+	union { const float3 s; __m128 s4; };
+	edge1_4 = _mm_sub_ps(tri.v1, tri.v0);
+	edge2_4 = _mm_sub_ps(tri.v2, tri.v0);
+	//const float3 edge1 = tri.vertex1 - tri.vertex0;
+	//const float3 edge2 = tri.vertex2 - tri.vertex0;
+	h4 = crossSIMD(ray.D4, edge2_4);
+	//const float3 h = cross( ray.D, edge2 );
 	const float a = dot( edge1, h );
 	if (fabs( a ) < 0.00001f) return; // ray parallel to triangle
 	const float f = 1 / a;
-	const float3 s = ray.O - tri.vertex0;
+	//const float3 s = ray.O - tri.vertex0;
+	s4 = _mm_sub_ps(ray.O4, tri.v0);
 	const float u = f * dot( s, h );
 	if (u < 0 || u > 1) return;
-	const float3 q = cross( s, edge1 );
+	//const float3 q = cross( s, edge1 );
+	q4 = crossSIMD(s4, edge1_4);
 	const float v = f * dot( ray.D, q );
 	if (v < 0 || u + v > 1) return;
 	const float t = f * dot( edge2, q );
@@ -45,6 +112,46 @@ inline float IntersectAABB( const Ray& ray, const float3 bmin, const float3 bmax
 	float tz1 = (bmin.z - ray.O.z) * ray.rD.z, tz2 = (bmax.z - ray.O.z) * ray.rD.z;
 	tmin = max( tmin, min( tz1, tz2 ) ), tmax = min( tmax, max( tz1, tz2 ) );
 	if (tmax >= tmin && tmin < ray.hit.t && tmax > 0) return tmin; else return 1e30f;
+}
+
+__m256 IntersectAABBAVX( const RayAVX& ray, const float3 bmin, const float3 bmax )
+{
+	// "slab test" ray/AABB intersection
+	__m256 bminx = _mm256_set1_ps(bmin.x);
+	__m256 bminy = _mm256_set1_ps(bmin.y);
+	__m256 bminz = _mm256_set1_ps(bmin.z);
+	__m256 bmaxx = _mm256_set1_ps(bmax.x);
+	__m256 bmaxy = _mm256_set1_ps(bmax.y);
+	__m256 bmaxz = _mm256_set1_ps(bmax.z);
+	//float tx1 = (bmin.x - ray.O.x) * ray.rD.x;
+	//float tx2 = (bmax.x - ray.O.x) * ray.rD.x;
+	__m256 tx1 = _mm256_mul_ps(_mm256_sub_ps(bminx, ray.Ox8), ray.rDx8);
+	__m256 tx2 = _mm256_mul_ps(_mm256_sub_ps(bmaxx, ray.Ox8), ray.rDx8);
+	//float tmin = min(tx1, tx2);
+	//float tmax = max(tx1, tx2);
+	__m256 tmin = _mm256_min_ps(tx1, tx2);
+	__m256 tmax = _mm256_max_ps(tx1, tx2);
+	//float ty1 = (bmin.y - ray.O.y) * ray.rD.y;
+	//float ty2 = (bmax.y - ray.O.y) * ray.rD.y;
+	__m256 ty1 = _mm256_mul_ps(_mm256_sub_ps(bminy, ray.Oy8), ray.rDy8);
+	__m256 ty2 = _mm256_mul_ps(_mm256_sub_ps(bmaxy, ray.Oy8), ray.rDy8);
+	//tmin = max(tmin, min(ty1, ty2));
+	//tmax = min(tmax, max(ty1, ty2));
+	tmin = _mm256_max_ps(tmin, _mm256_min_ps(ty1, ty2));
+	tmax = _mm256_min_ps(tmax, _mm256_max_ps(ty1, ty2));
+	//float tz1 = (bmin.z - ray.O.z) * ray.rD.z;
+	//float tz2 = (bmax.z - ray.O.z) * ray.rD.z;
+	__m256 tz1 = _mm256_mul_ps(_mm256_sub_ps(bminz, ray.Oz8), ray.rDz8);
+	__m256 tz2 = _mm256_mul_ps(_mm256_sub_ps(bmaxz, ray.Oz8), ray.rDz8);
+	//tmin = max(tmin, min(tz1, tz2));
+	//tmax = min(tmax, max(tz1, tz2));
+	tmin = _mm256_max_ps(tmin, _mm256_min_ps(tz1, tz2));
+	tmax = _mm256_min_ps(tmax, _mm256_max_ps(tz1, tz2));
+	//if (tmax >= tmin && tmin < ray.hit.t && tmax > 0) return tmin;  else return 1e30f;
+	__m256 tmax_gtet_tmin = _mm256_cmp_ps(tmax, tmin, _CMP_GE_OS);
+	__m256 tmin_lt_hit = _mm256_cmp_ps(tmin, ray.t8, _CMP_LT_OS);
+	__m256 tmax_gt_zero = _mm256_cmp_ps(tmax, _mm256_setzero_ps(), _CMP_GT_OS);
+	return _mm256_blendv_ps(_mm256_set1_ps(1e30f), tmin, _mm256_and_ps(_mm256_and_ps(tmax_gtet_tmin, tmin_lt_hit), tmax_gt_zero));
 }
 
 float IntersectAABB_SSE( const Ray& ray, const __m128& bmin4, const __m128& bmax4 )
@@ -152,6 +259,43 @@ void BVH::Intersect( Ray& ray, uint instanceIdx )
 		}
 	}
 }
+
+void BVH::IntersectAVX( RayAVX& ray, uint instanceIdx )
+{
+	BVHNode* node = &bvhNode[0], * stack[64];
+	uint stackPtr = 0;
+	while (1)
+	{
+		if (node->isLeaf())
+		{
+			for (uint i = 0; i < node->triCount; i++)
+			{
+				uint instPrim = (instanceIdx << 20) + triIdx[node->leftFirst + i];
+				IntersectTriAVX( ray, mesh->tri[instPrim & 0xfffff /* 20 bits */], _mm256_set1_ps(instanceIdx << 20), _mm256_set1_ps(triIdx[node->leftFirst + i]));
+			}
+			if (stackPtr == 0) break; else node = stack[--stackPtr];
+			continue;
+		}
+		BVHNode* child1 = &bvhNode[node->leftFirst];
+		BVHNode* child2 = &bvhNode[node->leftFirst + 1];
+
+		__m256 dist1 = IntersectAABBAVX( ray, child1->aabbMin, child1->aabbMax );
+		__m256 dist2 = IntersectAABBAVX( ray, child2->aabbMin, child2->aabbMax );
+
+
+		if (dist1.m256_f32[0] > dist2.m256_f32[0]) { swap(dist1, dist2); swap(child1, child2); }
+		if (dist1.m256_f32[0] == 1e30f)
+		{
+			if (stackPtr == 0) break; else node = stack[--stackPtr];
+		}
+		else
+		{
+			node = child1;
+			if (dist2.m256_f32[0] != 1e30f) stack[stackPtr++] = child2;
+		}
+	}
+}
+
 
 void BVH::Refit()
 {
@@ -392,6 +536,26 @@ void BVHInstance::Intersect( Ray& ray )
 	ray = backupRay;
 }
 
+void BVHInstance::IntersectAVX( RayAVX& ray )
+{
+	// backup ray and transform original
+	RayAVX backupRay = ray;
+	//ray.O = TransformPosition( ray.O, invTransform );
+	TransformPositionAVX( &ray.Ox8, &ray.Oy8, &ray.Oz8, invTransform );
+	//ray.D = TransformVector( ray.D, invTransform );
+	TransformVectorAVX( &ray.Dx8, &ray.Dy8, &ray.Dz8, invTransform );
+	ray.rDx8 = _mm256_rcp_ps(ray.Dx8), ray.rDy8 = _mm256_rcp_ps(ray.Dy8), ray.rDz8 = _mm256_rcp_ps(ray.Dz8);
+	// trace ray through BVH
+	bvh->IntersectAVX( ray, idx );
+	// restore ray origin and direction
+	backupRay.t8 = ray.t8;
+	backupRay.u = ray.u;
+	backupRay.v = ray.v;
+	backupRay.instIdx = ray.instIdx;
+	backupRay.triIdx = ray.triIdx;
+	ray = backupRay;
+}
+
 // TLAS implementation
 
 TLAS::TLAS( BVHInstance* bvhList, int N )
@@ -580,4 +744,48 @@ void TLAS::Intersect( Ray& ray )
 	}
 }
 
+void TLAS::IntersectAVX( RayAVX& ray )
+{
+	// calculate reciprocal ray directions for faster AABB intersection
+	ray.rDx8 = _mm256_rcp_ps(ray.Dx8);
+	ray.rDy8 = _mm256_rcp_ps(ray.Dy8);
+	ray.rDz8 = _mm256_rcp_ps(ray.Dz8);
+	// use a local stack instead of a recursive function
+	TLASNode* node = &tlasNode[0], * stack[64];
+	uint stackPtr = 0;
+	// traversl loop; terminates when the stack is empty
+	while (1)
+	{
+		if (node->isLeaf())
+		{
+			// current node is a leaf: intersect BLAS
+			blas[node->BLAS].IntersectAVX( ray );
+			// pop a node from the stack; terminate if none left
+			if (stackPtr == 0) break; else node = stack[--stackPtr];
+			continue;
+		}
+		// current node is an interior node: visit child nodes, ordered
+		TLASNode* child1 = &tlasNode[node->leftRight & 0xffff];
+		TLASNode* child2 = &tlasNode[node->leftRight >> 16];
+		__m256 dist1 = IntersectAABBAVX( ray, child1->aabbMin, child1->aabbMax );
+		__m256 dist2 = IntersectAABBAVX( ray, child2->aabbMin, child2->aabbMax );
+		// use first ray as the lead ray
+
+		float lead_dist1 = dist1.m256_f32[1];
+		float lead_dist2 = dist2.m256_f32[1];
+
+		if (dist1.m256_f32[0] > dist2.m256_f32[0]) { swap(dist1, dist2); swap(child1, child2); }
+		if (dist1.m256_f32[0] == 1e30f)
+		{
+			// missed both child nodes; pop a node from the stack
+			if (stackPtr == 0) break; else node = stack[--stackPtr];
+		}
+		else
+		{
+			// visit near node; push the far node if the ray intersects it
+			node = child1;
+			if (dist2.m256_f32[0] != 1e30f) stack[stackPtr++] = child2;
+		}
+	}
+}
 // EOF

@@ -134,6 +134,7 @@
   <ItemGroup>
     <ClInclude Include="bvh.h" />
     <ClInclude Include="cl\tools.cl" />
+    <ClInclude Include="simdmath.h" />
     <ClInclude Include="whitted.h" />
     <ClInclude Include="template\common.h" />
     <ClInclude Include="template\precomp.h" />

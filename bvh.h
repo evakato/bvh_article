@@ -1,7 +1,7 @@
 #pragma once
 
 // enable the use of SSE in the AABB intersection function
-#define USE_SSE
+//#define USE_SSE
 
 // bin count for binned BVH building
 #define BINS 8
@@ -53,6 +53,18 @@ __declspec(align(64)) struct Ray
 	Intersection hit; // total ray size: 64 bytes
 };
 
+struct RayAVX
+{
+	__m256 Ox8, Oy8, Oz8;
+	__m256 Dx8, Dy8, Dz8;
+	__m256 rDx8, rDy8, rDz8;
+	// intersection data
+	__m256 t8;
+	// why are we even loading this data rn xd
+	__m256 u, v;
+	__m256 instIdx, triIdx;
+};
+
 // 32-byte BVH node struct
 struct BVHNode
 {
@@ -80,6 +92,7 @@ public:
 	void Build();
 	void Refit();
 	void Intersect( Ray& ray, uint instanceIdx );
+	void IntersectAVX(RayAVX& ray, uint instanceIdx);
 private:
 	void Subdivide( uint nodeIdx, uint depth, uint& nodePtr, float3& centroidMin, float3& centroidMax );
 	void UpdateNodeBounds( uint nodeIdx, float3& centroidMin, float3& centroidMax );
@@ -118,6 +131,7 @@ public:
 	void SetTransform( mat4& transform );
 	mat4& GetTransform() { return transform; }
 	void Intersect( Ray& ray );
+	void IntersectAVX(RayAVX& ray);
 private:
 	mat4 transform;
 	mat4 invTransform; // inverse transform
@@ -148,6 +162,7 @@ public:
 	TLAS( BVHInstance* bvhList, int N );
 	void Build();
 	void Intersect( Ray& ray );
+	void IntersectAVX( RayAVX& ray );
 private:
 	int FindBestMatch( int N, int A );
 public:

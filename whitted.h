@@ -11,6 +11,7 @@ public:
 	void Init();
 	void AnimateScene();
 	float3 Trace( Ray& ray, int rayDepth = 0 );
+	void TraceAVX(RayAVX& ray, __m256* r, __m256* g, __m256* b, int rayDepth = 0);
 	void Tick( float deltaTime );
 	void Shutdown() { /* implement if you want to do something on exit */ }
 	// input handling
@@ -28,7 +29,7 @@ public:
 	float3 p0, p1, p2; // virtual screen plane corners
 	float3* accumulator;
 	float* skyPixels;
-	int skyWidth, skyHeight, skyBpp;
+	int skyWidth, skyHeight, skyFull, skyBpp;
 };
 
 } // namespace Tmpl8

@@ -19,6 +19,7 @@
     </ClInclude>
     <ClInclude Include="bvh.h" />
     <ClInclude Include="whitted.h" />
+    <ClInclude Include="simdmath.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="template\LICENSE">
