@@ -112,8 +112,7 @@ void WhittedApp::TraceAVX( RayAVX& ray, __m256* r, __m256* g, __m256* b, int ray
 {
 	tlas.IntersectAVX( ray );
 	//print_m256(ray.t8);
-	__m256 mask = _mm256_cmp_ps(ray.t8, _mm256_set1_ps(1e29f), _CMP_GT_OQ);
-	__m256 half = _mm256_set1_ps(0.3f);
+	__m256 mask = _mm256_cmp_ps(ray.t8, _mm256_set1_ps(1e30f), _CMP_GE_OQ);
 
 	// sample sky
 	float Dx[8], Dy[8], Dz[8];
@@ -137,9 +136,12 @@ void WhittedApp::TraceAVX( RayAVX& ray, __m256* r, __m256* g, __m256* b, int ray
 	skyg = _mm256_mul_ps(scale, skyg);
 	skyb = _mm256_mul_ps(scale, skyb);
 
-	*r = _mm256_blendv_ps(half, skyr, mask);
-	*g = _mm256_blendv_ps(half, skyg, mask);
-	*b = _mm256_blendv_ps(half, skyb, mask);
+	//__m256 distcol = _mm256_sub_ps(_mm256_set1_ps(500), _mm256_mul_ps(ray.t8, _mm256_set1_ps(42)));
+	__m256 distcol = _mm256_div_ps(ray.t8, _mm256_set1_ps(32));
+
+	*r = _mm256_blendv_ps(distcol, skyr, mask);
+	*g = _mm256_blendv_ps(distcol, skyg, mask);
+	*b = _mm256_blendv_ps(distcol, skyb, mask);
 
 	/*
 	// calculate texture uv based on barycentrics
