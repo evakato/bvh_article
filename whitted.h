@@ -11,7 +11,9 @@ public:
 	void Init();
 	void AnimateScene();
 	float3 Trace( Ray& ray, int rayDepth = 0 );
-	void TraceAVX(RayAVX& ray, __m256* r, __m256* g, __m256* b, int rayDepth = 0);
+//	void TraceAVX(RayAVX& ray, __m256* r, __m256* g, __m256* b, int rayDepth = 0);
+	void TraceAVX(RayAVX& ray, float3* albedo, int rayDepth = 0);
+	//void WhittedApp::TraceAVX(RayAVX& ray, float3* rgb, int rayDepth = 0);
 	void Tick( float deltaTime );
 	void Shutdown() { /* implement if you want to do something on exit */ }
 	// input handling

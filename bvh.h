@@ -9,6 +9,8 @@
 namespace Tmpl8
 {
 
+// additional triangle data, for texturing and shading
+struct TriEx { float2 uv0, uv1, uv2; float3 N0, N1, N2; };
 // minimalist triangle struct
 __declspec(align(64)) struct Tri
 {
@@ -17,10 +19,10 @@ __declspec(align(64)) struct Tri
 	union { float3 vertex1; __m128 v1; };
 	union { float3 vertex2; __m128 v2; };
 	union { float3 centroid; __m128 centroid4; }; // total size: 64 bytes
+	TriEx triex;
 };
 
-// additional triangle data, for texturing and shading
-struct TriEx { float2 uv0, uv1, uv2; float3 N0, N1, N2; };
+
 
 // minimalist AABB struct with grow functionality
 struct aabb
@@ -53,17 +55,28 @@ __declspec(align(64)) struct Ray
 	Intersection hit; // total ray size: 64 bytes
 };
 
+struct TriTex {
+	__m256 u0, v0, u1, v1, u2, v2;
+};
+
+struct TriNorm {
+	__m256 n0x, n0y, n0z, n1x, n1y, n1z, n2x, n2y, n2z;
+};
+
 struct RayAVX
 {
 	__m256 Ox8, Oy8, Oz8;
 	__m256 Dx8, Dy8, Dz8;
 	__m256 rDx8, rDy8, rDz8;
-	// intersection data
 	__m256 t8;
-	// why are we even loading this data rn xd
+
+	// shit
 	__m256 u, v;
 	__m256 instIdx, triIdx;
+	TriTex triTexture;
+	TriNorm triNormal;
 };
+
 
 // 32-byte BVH node struct
 struct BVHNode
@@ -146,7 +159,10 @@ private:
 // top-level BVH node
 struct TLASNode
 {
-	union { struct { float dummy1[3]; uint leftRight; }; struct { float dummy3[3]; unsigned short left, right; }; float3 aabbMin; __m128 aabbMin4; };
+	union { struct { float dummy1[3]; uint leftRight; }; 
+	struct { float dummy3[3]; unsigned short left, right; }; 
+	float3 aabbMin; __m128 aabbMin4; };
+
 	union { struct { float dummy2[3]; uint BLAS; }; float3 aabbMax; __m128 aabbMax4; };
 	bool isLeaf() { return leftRight == 0; }
 };

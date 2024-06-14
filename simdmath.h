@@ -200,4 +200,33 @@ namespace Tmpl8 {
         return result;
     }
 
+    static uint64_t seed = 123456789;
+
+    // Linear congruential generator parameters
+    #define LCG_A 6364136223846793005ULL
+    #define LCG_C 1ULL
+
+    inline __m256i generate_random_ints() {
+        __m256i state = _mm256_set_epi64x(seed, seed + 1, seed + 2, seed + 3);
+        __m256i multiplier = _mm256_set1_epi64x(LCG_A);
+        __m256i increment = _mm256_set1_epi64x(LCG_C);
+
+        seed = LCG_A * seed + LCG_C;
+
+        state = _mm256_mul_epu32(state, multiplier);
+        state = _mm256_add_epi64(state, increment);
+
+        return state;
+    }
+
+    inline __m256 generate_random_floats() {
+        __m256i random_ints = generate_random_ints();
+        __m128i lo = _mm256_castsi256_si128(random_ints); // lower 128 bits
+        __m128i hi = _mm256_extracti128_si256(random_ints, 1); // upper 128 bits
+        __m256i random_ints_32 = _mm256_set_m128i(hi, lo);
+        __m256 float_divisor = _mm256_set1_ps(1.0f / 4294967296.0f);
+        __m256 random_floats = _mm256_mul_ps(_mm256_cvtepi32_ps(random_ints_32), float_divisor);
+        return random_floats;
+    }
+
 }

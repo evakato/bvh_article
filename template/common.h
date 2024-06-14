@@ -4,6 +4,8 @@
 // default screen resolution
 #define SCRWIDTH	1024
 #define SCRHEIGHT	640
+#define INVSCRWIDTH	0.0009765625f
+#define INVSCRHEIGHT	0.0015625f
 // #define FULLSCREEN
 
 // constants

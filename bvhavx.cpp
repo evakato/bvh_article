@@ -47,9 +47,20 @@ void IntersectTriAVX(RayAVX& ray, const Tri& tri, const __m256 instIdx, const __
 
 	__m256 fullmask = _mm256_and_ps(_mm256_and_ps(_mm256_and_ps(ray_notparallel, u_01), v_01), t_validrange);
 	ray.t8 = _mm256_blendv_ps(ray.t8, t, fullmask);
-	ray.triIdx = _mm256_blendv_ps(ray.triIdx, triIdx, fullmask);
 	ray.u = _mm256_blendv_ps(ray.u, u, fullmask);
 	ray.v = _mm256_blendv_ps(ray.v, v, fullmask);
+
+	//printf("%d %d");
+
+	/*
+	ray.triTexture.u0 = _mm256_blendv_ps(ray.triTexture.u0, _mm256_set1_ps(tri.triex.uv0.x), fullmask);
+	ray.triTexture.v0 = _mm256_blendv_ps(ray.triTexture.v0, _mm256_set1_ps(tri.triex.uv0.y), fullmask);
+	ray.triTexture.u1 = _mm256_blendv_ps(ray.triTexture.u1, _mm256_set1_ps(tri.triex.uv1.x), fullmask);
+	ray.triTexture.v1 = _mm256_blendv_ps(ray.triTexture.v1, _mm256_set1_ps(tri.triex.uv1.y), fullmask);
+	ray.triTexture.u2 = _mm256_blendv_ps(ray.triTexture.u2, _mm256_set1_ps(tri.triex.uv2.x), fullmask);
+	ray.triTexture.v2 = _mm256_blendv_ps(ray.triTexture.v2, _mm256_set1_ps(tri.triex.uv2.y), fullmask);
+	*/
+	ray.triIdx = _mm256_blendv_ps(ray.triIdx, triIdx, fullmask);
 	ray.instIdx = _mm256_blendv_ps(ray.instIdx, instIdx, fullmask);
 	//ray.hit.t = t, ray.hit.u = u,
 	//ray.hit.v = v, ray.hit.instPrim = instPrim;
@@ -139,6 +150,7 @@ void BVH::IntersectAVX( RayAVX& ray, uint instanceIdx )
 	BVHNode* node = &bvhNode[0], * stack[64];
 	uint stackPtr = 0;
 	int iteration = 0;
+	__m256 instanceIdx8 = _mm256_set1_ps(instanceIdx);
 	while (1)
 	{
 		iteration++;
@@ -146,8 +158,7 @@ void BVH::IntersectAVX( RayAVX& ray, uint instanceIdx )
 		{
 			for (uint i = 0; i < node->triCount; i++)
 			{
-				uint instPrim = (instanceIdx << 20) + triIdx[node->leftFirst + i];
-				IntersectTriAVX( ray, mesh->tri[instPrim & 0xfffff /* 20 bits */], _mm256_set1_ps(instanceIdx << 20), _mm256_set1_ps(triIdx[node->leftFirst + i]));
+				IntersectTriAVX( ray, mesh->tri[triIdx[node->leftFirst + i]], instanceIdx8, _mm256_set1_ps(triIdx[node->leftFirst + i]));
 			}
 			if (stackPtr == 0) break;
 			else node = stack[--stackPtr];
@@ -213,40 +224,34 @@ void TLAS::IntersectAVX( RayAVX& ray )
 	{
 		if (node->isLeaf())
 		{
-			// current node is a leaf: intersect BLAS
 			blas[node->BLAS].IntersectAVX( ray );
-			// pop a node from the stack; terminate if none left
 			if (stackPtr == 0) break; else node = stack[--stackPtr];
 			continue;
 		}
-		// current node is an interior node: visit child nodes, ordered
 		TLASNode* child1 = &tlasNode[node->leftRight & 0xffff];
 		TLASNode* child2 = &tlasNode[node->leftRight >> 16];
 		__m256 dist1 = IntersectAABBAVX( ray, child1->aabbMin, child1->aabbMax );
 		__m256 dist2 = IntersectAABBAVX( ray, child2->aabbMin, child2->aabbMax );
-
-		//__m256 distcomp = _mm256_cmp_ps(dist1, dist2, _CMP_GT_OQ);
-		//int distcomp_int = _mm256_movemask_ps(distcomp);
 		__m256 missed_child1 = _mm256_cmp_ps(dist1, _mm256_set1_ps(1e30f), _CMP_EQ_OQ);
 		__m256 missed_child2 = _mm256_cmp_ps(dist2, _mm256_set1_ps(1e30f), _CMP_EQ_OQ);
 		__m256 missed_both = _mm256_and_ps(missed_child1, missed_child2);
 		int missed_child1_int = _mm256_movemask_ps(missed_child1);
 		int missed_child2_int = _mm256_movemask_ps(missed_child2);
 		int missed_both_int = _mm256_movemask_ps(missed_both);
-		// if all streams miss both children
+
 		if (missed_both_int == 255) {
+			// if all streams miss both children
 			if (stackPtr == 0) break;
 			else node = stack[--stackPtr];
 		}
+		else if (dist1.m256_f32[0] < dist2.m256_f32[0]) {
+			// choose first stream as lead ray
+			node = child1;
+			if (missed_child2_int != 255) stack[stackPtr++] = child2;
+		} 
 		else {
-			if (dist1.m256_f32[0] < dist2.m256_f32[0]) {
-				node = child1;
-				if (missed_child2_int != 255) stack[stackPtr++] = child2;
-			}
-			else {
-				node = child2;
-				if (missed_child1_int != 255) stack[stackPtr++] = child1;
-			}
+			node = child2;
+			if (missed_child1_int != 255) stack[stackPtr++] = child1;
 		}
 	}
 }
