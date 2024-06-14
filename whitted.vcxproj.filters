@@ -6,6 +6,7 @@
     </ClCompile>
     <ClCompile Include="bvh.cpp" />
     <ClCompile Include="whitted.cpp" />
+    <ClCompile Include="bvhavx.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="template\common.h">

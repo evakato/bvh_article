@@ -18,42 +18,93 @@ namespace Tmpl8 {
         return normalized;
     }
 
-    inline void TransformPositionAVX(__m256* x, __m256* y, __m256* z, const mat4& transform) {
-        __m256 m0 = _mm256_set_ps(transform(0, 3), transform(0, 2), transform(0, 1), transform(0, 0),
-            transform(0, 3), transform(0, 2), transform(0, 1), transform(0, 0));
-        __m256 m1 = _mm256_set_ps(transform(1, 3), transform(1, 2), transform(1, 1), transform(1, 0),
-            transform(1, 3), transform(1, 2), transform(1, 1), transform(1, 0));
-        __m256 m2 = _mm256_set_ps(transform(2, 3), transform(2, 2), transform(2, 1), transform(2, 0),
-            transform(2, 3), transform(2, 2), transform(2, 1), transform(2, 0));
-        __m256 m3 = _mm256_set_ps(transform(3, 3), transform(3, 2), transform(3, 1), transform(3, 0),
-            transform(3, 3), transform(3, 2), transform(3, 1), transform(3, 0));
+    inline void TransformPositionAVX(__m256& x, __m256& y, __m256& z, const mat4& M) {
+        // Load matrix elements into AVX registers
+        __m256 m0 = _mm256_set1_ps(M.cell[0]);
+        __m256 m1 = _mm256_set1_ps(M.cell[1]);
+        __m256 m2 = _mm256_set1_ps(M.cell[2]);
+        __m256 m3 = _mm256_set1_ps(M.cell[3]);
+        __m256 m4 = _mm256_set1_ps(M.cell[4]);
+        __m256 m5 = _mm256_set1_ps(M.cell[5]);
+        __m256 m6 = _mm256_set1_ps(M.cell[6]);
+        __m256 m7 = _mm256_set1_ps(M.cell[7]);
+        __m256 m8 = _mm256_set1_ps(M.cell[8]);
+        __m256 m9 = _mm256_set1_ps(M.cell[9]);
+        __m256 m10 = _mm256_set1_ps(M.cell[10]);
+        __m256 m11 = _mm256_set1_ps(M.cell[11]);
+        __m256 m12 = _mm256_set1_ps(M.cell[12]);
+        __m256 m13 = _mm256_set1_ps(M.cell[13]);
+        __m256 m14 = _mm256_set1_ps(M.cell[14]);
+        __m256 m15 = _mm256_set1_ps(M.cell[15]);
 
-        __m256 temp_x = _mm256_add_ps(_mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(*x, m0), _mm256_mul_ps(*y, m1)), _mm256_mul_ps(*z, m2)), m3);
-        __m256 temp_y = _mm256_add_ps(_mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(*x, m0), _mm256_mul_ps(*y, m1)), _mm256_mul_ps(*z, m2)), m3);
-        __m256 temp_z = _mm256_add_ps(_mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(*x, m0), _mm256_mul_ps(*y, m1)), _mm256_mul_ps(*z, m2)), m3);
+        // Perform matrix multiplication
+        __m256 new_x = _mm256_add_ps(
+            _mm256_add_ps(
+                _mm256_add_ps(
+                    _mm256_mul_ps(m0, x),
+                    _mm256_mul_ps(m1, y)),
+                _mm256_mul_ps(m2, z)),
+            m3);
 
-        *x = temp_x;
-        *y = temp_y;
-        *z = temp_z;
+        __m256 new_y = _mm256_add_ps(
+            _mm256_add_ps(
+                _mm256_add_ps(
+                    _mm256_mul_ps(m4, x),
+                    _mm256_mul_ps(m5, y)),
+                _mm256_mul_ps(m6, z)),
+            m7);
+
+        __m256 new_z = _mm256_add_ps(
+            _mm256_add_ps(
+                _mm256_add_ps(
+                    _mm256_mul_ps(m8, x),
+                    _mm256_mul_ps(m9, y)),
+                _mm256_mul_ps(m10, z)),
+            m11);
+
+        // Update the original x, y, z with the new values
+        x = new_x;
+        y = new_y;
+        z = new_z;
     }
 
-    inline void TransformVectorAVX(__m256* x, __m256* y, __m256* z, const mat4& transform) {
-        __m256 m0 = _mm256_set_ps(transform(0, 3), transform(0, 2), transform(0, 1), transform(0, 0),
-            transform(0, 3), transform(0, 2), transform(0, 1), transform(0, 0));
-        __m256 m1 = _mm256_set_ps(transform(1, 3), transform(1, 2), transform(1, 1), transform(1, 0),
-            transform(1, 3), transform(1, 2), transform(1, 1), transform(1, 0));
-        __m256 m2 = _mm256_set_ps(transform(2, 3), transform(2, 2), transform(2, 1), transform(2, 0),
-            transform(2, 3), transform(2, 2), transform(2, 1), transform(2, 0));
+    inline void TransformVectorAVX(__m256& x, __m256& y, __m256& z, const mat4& M) {
+        // Load matrix elements into AVX registers
+        __m256 m0 = _mm256_set1_ps(M.cell[0]);
+        __m256 m1 = _mm256_set1_ps(M.cell[1]);
+        __m256 m2 = _mm256_set1_ps(M.cell[2]);
+        __m256 m4 = _mm256_set1_ps(M.cell[4]);
+        __m256 m5 = _mm256_set1_ps(M.cell[5]);
+        __m256 m6 = _mm256_set1_ps(M.cell[6]);
+        __m256 m8 = _mm256_set1_ps(M.cell[8]);
+        __m256 m9 = _mm256_set1_ps(M.cell[9]);
+        __m256 m10 = _mm256_set1_ps(M.cell[10]);
 
-        __m256 temp_x = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(*x, m0), _mm256_mul_ps(*y, m1)), _mm256_mul_ps(*z, m2));
-        __m256 temp_y = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(*x, m0), _mm256_mul_ps(*y, m1)), _mm256_mul_ps(*z, m2));
-        __m256 temp_z = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(*x, m0), _mm256_mul_ps(*y, m1)), _mm256_mul_ps(*z, m2));
+        // Perform matrix multiplication
+        __m256 new_x = _mm256_add_ps(
+            _mm256_add_ps(
+                _mm256_mul_ps(m0, x),
+                _mm256_mul_ps(m1, y)),
+            _mm256_mul_ps(m2, z));
 
-        *x = temp_x;
-        *y = temp_y;
-        *z = temp_z;
+        __m256 new_y = _mm256_add_ps(
+            _mm256_add_ps(
+                _mm256_mul_ps(m4, x),
+                _mm256_mul_ps(m5, y)),
+            _mm256_mul_ps(m6, z));
+
+        __m256 new_z = _mm256_add_ps(
+            _mm256_add_ps(
+                _mm256_mul_ps(m8, x),
+                _mm256_mul_ps(m9, y)),
+            _mm256_mul_ps(m10, z));
+
+        // Update the original x, y, z with the new values
+        x = new_x;
+        y = new_y;
+        z = new_z;
     }
-
+ 
     inline void crossAVX(__m256 a_x, __m256 a_y, __m256 a_z, __m256 b_x, __m256 b_y, __m256 b_z, __m256* out_x, __m256* out_y, __m256* out_z) {
         *out_x = _mm256_sub_ps(_mm256_mul_ps(a_y, b_z), _mm256_mul_ps(a_z, b_y));
         *out_y = _mm256_sub_ps(_mm256_mul_ps(a_z, b_x), _mm256_mul_ps(a_x, b_z));

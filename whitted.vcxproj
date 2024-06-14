@@ -123,6 +123,7 @@
   <!-- END Custom section -->
   <ItemGroup>
     <ClCompile Include="bvh.cpp" />
+    <ClCompile Include="bvhavx.cpp" />
     <ClCompile Include="whitted.cpp" />
     <ClCompile Include="template\template.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
