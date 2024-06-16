@@ -1,23 +1,6 @@
 #pragma once
 
 namespace Tmpl8 {
-    inline __m128 crossSIMD(__m128 a, __m128 b) {
-        __m128 a_yzx = _mm_shuffle_ps(a, a, _MM_SHUFFLE(3, 0, 2, 1));
-        __m128 b_yzx = _mm_shuffle_ps(b, b, _MM_SHUFFLE(3, 0, 2, 1));
-        __m128 c = _mm_sub_ps(
-            _mm_mul_ps(a, b_yzx),
-            _mm_mul_ps(a_yzx, b)
-        );
-        return _mm_shuffle_ps(c, c, _MM_SHUFFLE(3, 0, 2, 1));
-    }
-
-    inline __m128 normalizeSIMD(__m128 v) {
-        __m128 dotProduct = _mm_dp_ps(v, v, 0xFF);
-        __m128 invSqrt = _mm_rsqrt_ps(dotProduct);
-        __m128 normalized = _mm_mul_ps(v, invSqrt);
-        return normalized;
-    }
-
     inline void TransformPositionAVX(__m256& x, __m256& y, __m256& z, const mat4& M) {
         // Load matrix elements into AVX registers
         __m256 m0 = _mm256_set1_ps(M.cell[0]);
@@ -179,6 +162,16 @@ namespace Tmpl8 {
         __m256 float_divisor = _mm256_set1_ps(1.0f / 4294967296.0f);
         __m256 random_floats = _mm256_mul_ps(_mm256_cvtepi32_ps(random_ints_32), float_divisor);
         return random_floats;
+    }
+
+    inline __m256 avxLength(__m256 x, __m256 y, __m256 z) {
+        __m256 x2 = _mm256_mul_ps(x, x);
+        __m256 y2 = _mm256_mul_ps(y, y);
+        __m256 z2 = _mm256_mul_ps(z, z);
+        __m256 sum = _mm256_add_ps(_mm256_add_ps(x2, y2), z2);
+        __m256 length = _mm256_sqrt_ps(sum);
+
+        return length;
     }
 
 }

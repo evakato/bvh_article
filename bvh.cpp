@@ -12,33 +12,23 @@ with kDtree:
 - 836ms with cache alignment
 */
 
-void IntersectTri( Ray& ray, const Tri& tri, const uint instPrim )
+void IntersectTri(Ray& ray, const Tri& tri, const uint instPrim)
 {
 	// Moeller-Trumbore ray/triangle intersection algorithm, see:
 	// en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
-	union { const float3 edge1; __m128 edge1_4; };
-	union { const float3 edge2; __m128 edge2_4; };
-	union { const float3 h; __m128 h4; };
-	union { const float3 q; __m128 q4; };
-	union { const float3 s; __m128 s4; };
-	edge1_4 = _mm_sub_ps(tri.v1, tri.v0);
-	edge2_4 = _mm_sub_ps(tri.v2, tri.v0);
-	//const float3 edge1 = tri.vertex1 - tri.vertex0;
-	//const float3 edge2 = tri.vertex2 - tri.vertex0;
-	h4 = crossSIMD(ray.D4, edge2_4);
-	//const float3 h = cross( ray.D, edge2 );
-	const float a = dot( edge1, h );
-	if (fabs( a ) < 0.00001f) return; // ray parallel to triangle
+	const float3 edge1 = tri.vertex1 - tri.vertex0;
+	const float3 edge2 = tri.vertex2 - tri.vertex0;
+	const float3 h = cross(ray.D, edge2);
+	const float a = dot(edge1, h);
+	if (fabs(a) < 0.00001f) return; // ray parallel to triangle
 	const float f = 1 / a;
-	//const float3 s = ray.O - tri.vertex0;
-	s4 = _mm_sub_ps(ray.O4, tri.v0);
-	const float u = f * dot( s, h );
+	const float3 s = ray.O - tri.vertex0;
+	const float u = f * dot(s, h);
 	if (u < 0 || u > 1) return;
-	//const float3 q = cross( s, edge1 );
-	q4 = crossSIMD(s4, edge1_4);
-	const float v = f * dot( ray.D, q );
+	const float3 q = cross(s, edge1);
+	const float v = f * dot(ray.D, q);
 	if (v < 0 || u + v > 1) return;
-	const float t = f * dot( edge2, q );
+	const float t = f * dot(edge2, q);
 	if (t > 0.0001f && t < ray.hit.t)
 		ray.hit.t = t, ray.hit.u = u,
 		ray.hit.v = v, ray.hit.instPrim = instPrim;
