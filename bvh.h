@@ -11,6 +11,13 @@ namespace Tmpl8
 
 // additional triangle data, for texturing and shading
 struct TriEx { float2 uv0, uv1, uv2; float3 N0, N1, N2; };
+/*
+	struct TriEx {
+		float uv0x, uv0y, uv1x, uv1y, uv2x, uv2y;
+		float N0x, N0y, N0z, N1x, N1y, N1z, N2x, N2y, N2z;
+	};
+	*/
+
 // minimalist triangle struct
 __declspec(align(64)) struct Tri
 {
@@ -55,26 +62,15 @@ __declspec(align(64)) struct Ray
 	Intersection hit; // total ray size: 64 bytes
 };
 
-struct TriTex {
-	__m256 u0, v0, u1, v1, u2, v2;
-};
-
-struct TriNorm {
-	__m256 n0x, n0y, n0z, n1x, n1y, n1z, n2x, n2y, n2z;
-};
-
-struct RayAVX
+__declspec(align(64)) struct RayAVX
 {
 	__m256 Ox8, Oy8, Oz8;
 	__m256 Dx8, Dy8, Dz8;
 	__m256 rDx8, rDy8, rDz8;
+	// intersection data
 	__m256 t8;
-
-	// shit
 	__m256 u, v;
-	__m256 instIdx, triIdx;
-	TriTex triTexture;
-	TriNorm triNormal;
+	__m256 instTriIdx;
 };
 
 

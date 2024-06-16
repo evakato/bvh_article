@@ -12,11 +12,6 @@
 // rights are reserved. No responsibility is accepted either.
 // For updates, follow me on twitter: @j_bikker.
 
-__m256 avx_rays = _mm256_set_ps(3.0f, 2.0f, 1.0f, 0.0f, 3.0f, 2.0f, 1.0f, 0.0f);
-float3 lightPos( 3, 10, 2 );
-float3 lightColor( 150, 150, 120 );
-float3 ambient( 0.2f, 0.2f, 0.4f );
-
 TheApp* CreateApp() { return new WhittedApp(); }
 
 inline float3 RGB8toRGB32F( uint c )
@@ -42,7 +37,13 @@ void WhittedApp::Init()
 	int bpp = 0;
 	skyPixels = stbi_loadf( "assets/sky_19.hdr", &skyWidth, &skyHeight, &skyBpp, 0 );
 	for (int i = 0; i < skyWidth * skyHeight * 3; i++) skyPixels[i] = sqrtf( skyPixels[i] );
-	skyFull = skyWidth * skyHeight;
+	// hardcoded this
+	skyfull = _mm256_set1_epi32(0xFFFFFF);
+	skymul = _mm256_set1_epi32(3);
+	skywidth8 = _mm256_set1_epi32(skyWidth);
+	skywidthpi8 = _mm256_set1_ps(INV2PI * skyWidth);
+	skyheightpi8 = _mm256_set1_ps(INVPI * skyHeight);
+	scalesky = _mm256_set1_ps(0.65f);
 }
 
 void WhittedApp::AnimateScene()
@@ -103,9 +104,6 @@ float3 WhittedApp::Trace( Ray& ray, int rayDepth )
 	else
 	{
 		// calculate the diffuse reflection in the intersection point
-		float3 lightPos( 3, 10, 2 );
-		float3 lightColor( 150, 150, 120 );
-		float3 ambient( 0.2f, 0.2f, 0.4f );
 		float3 L = lightPos - I;
 		float dist = length( L );
 		L *= 1.0f / dist;
@@ -118,50 +116,85 @@ void WhittedApp::TraceAVX( RayAVX& ray, float3* albedo, int rayDepth )
 {
 	tlas.IntersectAVX( ray );
 
+	// does the ray hit skydome
+	__m256 hitsSky = _mm256_cmp_ps(ray.t8, _mm256_set1_ps(1e30f), _CMP_GE_OQ);
+	// get sky albedos
+	__m256 skyu = _mm256_sub_ps(_mm256_mul_ps(_mm256_atan2_ps(ray.Dz8, ray.Dx8), skywidthpi8), half8);
+	__m256 skyv = _mm256_sub_ps(_mm256_mul_ps(_mm256_acos_ps(ray.Dy8), skyheightpi8), half8);
+	__m256i skyui = _mm256_cvtps_epi32(skyu);
+	__m256i skyvi = _mm256_cvtps_epi32(skyv);
+	__m256i skyIdx8 = (_mm256_add_epi32(_mm256_mullo_epi32(skyvi, skywidth8), skyui));
+	skyIdx8 = _mm256_mullo_epi32(_mm256_and_si256(skyIdx8, skyfull), skymul);
+	__m256 skyx = _mm256_mul_ps(_mm256_i32gather_ps(skyPixels, skyIdx8, sizeof(float)), scalesky);
+	__m256 skyy = _mm256_mul_ps(_mm256_i32gather_ps(skyPixels, _mm256_add_epi32(skyIdx8, _mm256_set1_epi32(1)), sizeof(float)), scalesky);
+	__m256 skyz = _mm256_mul_ps(_mm256_i32gather_ps(skyPixels, _mm256_add_epi32(skyIdx8, _mm256_set1_epi32(2)), sizeof(float)), scalesky);
+	int skyMask = _mm256_movemask_ps(hitsSky);
+	float skyxs[8], skyys[8], skyzs[8];
+	_mm256_storeu_ps(skyxs, skyx), _mm256_storeu_ps(skyys, skyy), _mm256_storeu_ps(skyzs, skyz);
+	if (skyMask == 255) {
+		for (int i = 0; i < 8; i++)
+			albedo[i] = float3(skyxs[i], skyys[i], skyzs[i]);
+		return;
+	}
+
 	float Dx[8], Dy[8], Dz[8];
 	float rayt[8];
 	float Ox[8], Oy[8], Oz[8];
-	int triIdxs[8], instIdxs[8];
-	_mm256_storeu_ps(Dx, ray.Dx8);
-	_mm256_storeu_ps(Dy, ray.Dy8);
-	_mm256_storeu_ps(Dz, ray.Dz8);
+	int instTriIdxs[8];
+	_mm256_storeu_ps(Dx, ray.Dx8), _mm256_storeu_ps(Dy, ray.Dy8), _mm256_storeu_ps(Dz, ray.Dz8);
 	_mm256_storeu_ps(rayt, ray.t8);
-	_mm256_storeu_ps(Ox, ray.Ox8);
-	_mm256_storeu_ps(Oy, ray.Oy8);
-	_mm256_storeu_ps(Oz, ray.Oz8);
-
+	_mm256_storeu_ps(Ox, ray.Ox8), _mm256_storeu_ps(Oy, ray.Oy8),_mm256_storeu_ps(Oz, ray.Oz8);
+	__m256i instTriIdx8 = _mm256_cvtps_epi32(ray.instTriIdx);
+	_mm256_storeu_si256((__m256i*)instTriIdxs, instTriIdx8);
 	Surface* tex = mesh->texture;
 
-	__m256i triIdx = _mm256_cvtps_epi32(ray.triIdx);
-	__m256i instIdx = _mm256_cvtps_epi32(ray.instIdx);
-	_mm256_storeu_si256((__m256i*)triIdxs, triIdx);
-	_mm256_storeu_si256((__m256i*)instIdxs, instIdx);
+
+	for (int i = 0; i < 8; ++i) {
+		if ((skyMask & (1 << i)) == 0) {
+			__m256 matchesRay = _mm256_cmp_ps(_mm256_set1_ps(ray.instTriIdx.m256_f32[i]), ray.instTriIdx, _CMP_EQ_OQ);
+			__m256i triIdx = _mm256_and_si256(instTriIdx8, _mm256_set1_epi32(0xFFFFF));
+			__m256i instIdx = _mm256_srli_epi32(instTriIdx8, 20);
+			__m256 rayw = _mm256_sub_ps(_mm256_set1_ps(1.0f), _mm256_add_ps(ray.u, ray.v));
+			TriEx& tri = mesh->triEx[triIdx.m256i_i32[0]];
+			__m256 uvx = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(_mm256_sub_ps(_mm256_set1_ps(1.0f), rayw), _mm256_set1_ps(tri.uv0.x)), _mm256_mul_ps(ray.u, _mm256_set1_ps(tri.uv1.x))), _mm256_mul_ps(ray.v, _mm256_set1_ps(tri.uv2.x)));
+			__m256 uvy = _mm256_add_ps(_mm256_add_ps(_mm256_mul_ps(_mm256_sub_ps(_mm256_set1_ps(1.0f), rayw), _mm256_set1_ps(tri.uv0.y)), _mm256_mul_ps(ray.u, _mm256_set1_ps(tri.uv1.y))), _mm256_mul_ps(ray.v, _mm256_set1_ps(tri.uv2.y)));
+			__m256i iu = _mm256_and_si256(_mm256_cvttps_epi32(_mm256_mul_ps(uvx, _mm256_set1_ps(1024.0f))), _mm256_set1_epi32(1023));
+			__m256i iv = _mm256_and_si256(_mm256_cvttps_epi32(_mm256_mul_ps(uvy, _mm256_set1_ps(1024.0f))), _mm256_set1_epi32(1023));
+			__m256i texel_indices = _mm256_add_epi32(iu, _mm256_mullo_epi32(iv, _mm256_set1_epi32(1024)));
+			__m256i texels = _mm256_i32gather_epi32((const int*)tex->pixels, texel_indices, 4);
+			//int matchesRayMask = _mm256_movemask_ps(matchesRay);
+		}
+	}
+
+	// sample texture
+
 
 	for (int i = 0; i < 8; i++) {
 		if (rayt[i] >= 1e30f) {
-			uint u = (uint)(skyWidth * atan2f(Dz[i], Dx[i]) * INV2PI - 0.5f);
-			uint v = (uint)(skyHeight * acosf(Dy[i]) * INVPI - 0.5f);
-			uint skyIdx = (u + v * skyWidth) % (skyFull);
-			albedo[i] = 0.65f * float3(skyPixels[skyIdx * 3], skyPixels[skyIdx * 3 + 1], skyPixels[skyIdx * 3 + 2]);
+			albedo[i] = float3(skyxs[i], skyys[i], skyzs[i]);
 		}
 		else {
-			TriEx& tri = mesh->triEx[triIdxs[i]];
+			uint triIdx = instTriIdxs[i] & 0xfffff;
+			uint instIdx = instTriIdxs[i] >> 20;
+			TriEx& tri = mesh->triEx[triIdx];
 			float rayu = ray.u.m256_f32[i];
 			float rayv = ray.v.m256_f32[i];
 			float rayw = rayu + rayv;
 			float2 uv = rayu * tri.uv1 + rayv * tri.uv2 + (1 - rayw) * tri.uv0;
+
 			int iu = (int)(uv.x * tex->width) % tex->width;
 			int iv = (int)(uv.y * tex->height) % tex->height;
 			uint texel = tex->pixels[iu + iv * tex->width];
 			float3 tex_albedo = RGB8toRGB32F(texel);
 
 			float3 N = rayu * tri.N1 + rayv * tri.N2 + (1 - rayw) * tri.N0;
-			N = normalize( TransformVector( N, bvhInstance[instIdxs[i]].GetTransform() ) );
+
+			N = normalize( TransformVector( N, bvhInstance[instIdx].GetTransform() ) );
 			float3 O = float3(Ox[i], Oy[i], Oz[i]);
 			float3 D = float3(Dx[i], Dy[i], Dz[i]);
 			float3 I = O + rayt[i] * D;
 
-			bool mirror = (instIdxs[i] * 17) & 1;
+			bool mirror = (instIdx * 17) & 1;
 			if (false && mirror)
 			{	
 				// calculate the specular reflection in the intersection point
@@ -169,7 +202,7 @@ void WhittedApp::TraceAVX( RayAVX& ray, float3* albedo, int rayDepth )
 				secondary.D = D - 2 * N * dot( N, D );
 				secondary.O = I + secondary.D * 0.001f;
 				secondary.hit.t = 1e30f;
-				if (rayDepth >= 10) albedo[i] = float3(0);
+				//if (rayDepth >= 10) albedo[i] = float3(0);
 				albedo[i] = Trace( secondary, rayDepth + 1 );
 			}
 			float3 L = lightPos - I;

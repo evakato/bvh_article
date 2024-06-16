@@ -2,7 +2,8 @@
 #include "simdmath.h"
 #include "bvh.h"
 
-void IntersectTriAVX(RayAVX& ray, const Tri& tri, const __m256 instIdx, const __m256 triIdx)
+//void IntersectTriAVX(RayAVX& ray, const Tri& tri, const __m256 instIdx, const __m256 triIdx)
+void IntersectTriAVX(RayAVX& ray, const Tri& tri, const __m256 instTriIdx8)
 {
 	const float3 edge1 = tri.vertex1 - tri.vertex0;
 	const float3 edge2 = tri.vertex2 - tri.vertex0;
@@ -60,8 +61,9 @@ void IntersectTriAVX(RayAVX& ray, const Tri& tri, const __m256 instIdx, const __
 	ray.triTexture.u2 = _mm256_blendv_ps(ray.triTexture.u2, _mm256_set1_ps(tri.triex.uv2.x), fullmask);
 	ray.triTexture.v2 = _mm256_blendv_ps(ray.triTexture.v2, _mm256_set1_ps(tri.triex.uv2.y), fullmask);
 	*/
-	ray.triIdx = _mm256_blendv_ps(ray.triIdx, triIdx, fullmask);
-	ray.instIdx = _mm256_blendv_ps(ray.instIdx, instIdx, fullmask);
+	ray.instTriIdx = _mm256_blendv_ps(ray.instTriIdx, instTriIdx8, fullmask);
+	//ray.triIdx = _mm256_blendv_ps(ray.triIdx, triIdx, fullmask);
+	//ray.instIdx = _mm256_blendv_ps(ray.instIdx, instIdx, fullmask);
 	//ray.hit.t = t, ray.hit.u = u,
 	//ray.hit.v = v, ray.hit.instPrim = instPrim;
 }
@@ -158,7 +160,10 @@ void BVH::IntersectAVX( RayAVX& ray, uint instanceIdx )
 		{
 			for (uint i = 0; i < node->triCount; i++)
 			{
-				IntersectTriAVX( ray, mesh->tri[triIdx[node->leftFirst + i]], instanceIdx8, _mm256_set1_ps(triIdx[node->leftFirst + i]));
+				uint instPrim = (instanceIdx << 20) + triIdx[node->leftFirst + i];
+				__m256 instTriIdx8 = _mm256_set1_ps(instPrim);
+				//IntersectTriAVX( ray, mesh->tri[triIdx[node->leftFirst + i]], instanceIdx8, _mm256_set1_ps(triIdx[node->leftFirst + i]));
+				IntersectTriAVX(ray, mesh->tri[triIdx[node->leftFirst + i]], instTriIdx8);
 			}
 			if (stackPtr == 0) break;
 			else node = stack[--stackPtr];
@@ -206,8 +211,9 @@ void BVHInstance::IntersectAVX( RayAVX& ray )
 	backupRay.t8 = ray.t8;
 	backupRay.u = ray.u;
 	backupRay.v = ray.v;
-	backupRay.instIdx = ray.instIdx;
-	backupRay.triIdx = ray.triIdx;
+	//backupRay.instIdx = ray.instIdx;
+	//backupRay.triIdx = ray.triIdx;
+	backupRay.instTriIdx = ray.instTriIdx;
 	ray = backupRay;
 }
 

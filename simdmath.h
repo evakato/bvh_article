@@ -144,54 +144,6 @@ namespace Tmpl8 {
             values[4], values[5], values[6], values[7]);
     }
 
-    inline __m256 atan_avx_approximation(__m256 x) {
-        __m256 a1 = _mm256_set1_ps(0.99997726f);
-        __m256 a3 = _mm256_set1_ps(-0.33262347f);
-        __m256 a5 = _mm256_set1_ps(0.19354346f);
-        __m256 a7 = _mm256_set1_ps(-0.11643287f);
-        __m256 a9 = _mm256_set1_ps(0.05265332f);
-        __m256 a11 = _mm256_set1_ps(-0.01172120f);
-
-        __m256 x_sq = _mm256_mul_ps(x, x);
-        __m256 result;
-        result = a11;
-        result = _mm256_fmadd_ps(x_sq, result, a9);
-        result = _mm256_fmadd_ps(x_sq, result, a7);
-        result = _mm256_fmadd_ps(x_sq, result, a5);
-        result = _mm256_fmadd_ps(x_sq, result, a3);
-        result = _mm256_fmadd_ps(x_sq, result, a1);
-        result = _mm256_mul_ps(x, result);
-
-        return result;
-    }
-
-    inline __m256 atan2_avx(__m256 y, __m256 x) {
-        __m256 zero = _mm256_setzero_ps();
-        __m256 pi = _mm256_set1_ps(3.14159265358979323846f);
-        __m256 pi_half = _mm256_set1_ps(3.14159265358979323846f / 2);
-        __m256 neg_pi_half = _mm256_set1_ps(-3.14159265358979323846f / 2);
-
-        // atan(y / x)
-        __m256 ratio = _mm256_div_ps(y, x);
-        __m256 angle = atan_avx_approximation(ratio);
-
-        // Mask for x < 0
-        __m256 mask_x_neg = _mm256_cmp_ps(x, zero, _CMP_LT_OS);
-        // Mask for y < 0
-        __m256 mask_y_neg = _mm256_cmp_ps(y, zero, _CMP_LT_OS);
-
-        // Adjust angle for x < 0
-        __m256 angle_adjusted = _mm256_blendv_ps(angle, _mm256_add_ps(angle, pi), mask_x_neg);
-        angle_adjusted = _mm256_blendv_ps(angle_adjusted, _mm256_sub_ps(angle, pi), mask_x_neg);
-
-        // Final adjustment for y < 0 when x == 0
-        __m256 mask_x_zero = _mm256_cmp_ps(x, zero, _CMP_EQ_OS);
-        __m256 y_adjusted = _mm256_blendv_ps(pi_half, neg_pi_half, mask_y_neg);
-        angle_adjusted = _mm256_blendv_ps(angle_adjusted, y_adjusted, mask_x_zero);
-
-        return angle_adjusted;
-    }
-
     inline __m256 modAVX(__m256 a, __m256 b) {
         __m256 div = _mm256_div_ps(a, b);
         __m256 floored_div = _mm256_floor_ps(div);

@@ -31,7 +31,15 @@ public:
 	float3 p0, p1, p2; // virtual screen plane corners
 	float3* accumulator;
 	float* skyPixels;
-	int skyWidth, skyHeight, skyFull, skyBpp;
+	int skyWidth, skyHeight, skyBpp;
+	__m256 avx_rays = _mm256_set_ps(3.0f, 2.0f, 1.0f, 0.0f, 3.0f, 2.0f, 1.0f, 0.0f);
+	__m256i skywidth8, skyfull, skymul;
+	__m256 skywidthpi8, skyheightpi8, scalesky;
+	__m256 half8 = _mm256_set1_ps(0.5f);
+	float3 lightPos = float3( 3, 10, 2 );
+	float3 lightColor = float3( 150, 150, 120 );
+	float3 ambient = float3( 0.2f, 0.2f, 0.4f );
+
 };
 
 } // namespace Tmpl8
